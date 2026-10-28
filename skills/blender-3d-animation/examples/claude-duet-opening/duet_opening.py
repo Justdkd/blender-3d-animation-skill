@@ -23,7 +23,8 @@ if os.path.exists(os.path.join(HERE, "phone_rows.json")):
 FPS, FRAMES = 30, 450
 R, T = 0.035, 0.014           # 毛毡圆片半径 / 厚度（米）
 TUBE = 0.07 * R               # 毛毡绳半径
-KEY_E = float(os.environ.get("KEY_E", 22))
+KEY_E = float(os.environ.get("KEY_E", 22))     # 场景主光，不照主角
+HERO_E = float(os.environ.get("HERO_E", 22))   # 跟着主角走的主光，只照主角
 BASE_SCALE = float(os.environ.get("BASE_SCALE", 1.0))
 ICON_K = 0.6                  # 屏幕上 2D 图标相对圆片的大小
 DISC_HEX, CORD_ICON_HEX = "D0744E", "8E3F25"
@@ -34,6 +35,8 @@ LID_TILT = math.radians(-15)
 PHONE_C, PHONE_L = Vector((0.30, -0.035, 0.0)), 0.142
 PHONE_W = PHONE_L / 2.1727    # 1320x2868 竖屏截图的宽高比
 PHONE_TOP = 0.0083
+# 在手机上沿远离镜头的一侧滚，前面大半行露出来，点亮时不被圆片挡住
+ROLL_Y = PHONE_C.y + PHONE_W / 2 - T / 2 - 0.004
 DOC_PANE_U, DOC_PANE_V = 0.405, 0.909   # 剧本截图里右侧文档区（左边界 u，上边界 v）
 
 random.seed(7)
@@ -115,7 +118,7 @@ def felt_material(name, flat_hex):
     height = math_node(N, L, "ADD", math_node(N, L, "MULTIPLY", fib2.outputs["Fac"], 0.6), fib1.outputs["Fac"])
     bump = node(N, "ShaderNodeBump", Strength=0.45, Distance=0.0004)
     L.new(height, bump.inputs["Height"])
-    base = value(N, "BaseScale", BASE_SCALE)  # 取色后整体微调反照率用
+    base = value(N, "BaseScale", BASE_SCALE)  # 换场景时整体微调反照率用（常量，不再按段打关键帧）
     col = mix_rgb(N, L, math_node(N, L, "MULTIPLY", blot.outputs["Fac"], 0.35), lin(DISC_HEX),
                   tuple(min(1, c * 1.12) for c in lin(DISC_HEX)[:3]) + (1,))
     vs = N.new("ShaderNodeVectorMath")
@@ -387,6 +390,31 @@ def build_disc():
     return root, roll, disc, cord
 
 
+def hero_light(key, root, hero_objs):
+    # Light Linking：场景主光不照主角；另一盏同色主光挂在 Root 上，相对主角的距离和入射角恒定，
+    # 主角在桌上、屏幕上、手机上受光一致，不用按段调反照率
+    def coll(name, state):
+        c = bpy.data.collections.new(name)
+        for o in hero_objs:
+            c.objects.link(o)
+        for co in c.collection_objects:
+            co.light_linking.link_state = state
+        return c
+    key.light_linking.receiver_collection = coll("HeroExclude", "EXCLUDE")
+    ld = bpy.data.lights.new("HeroKey", "AREA")
+    ld.size, ld.energy, ld.color = key.data.size, HERO_E, key.data.color
+    o = link(bpy.data.objects.new("HeroKey", ld))
+    center = Vector((0, 0, R))
+    # 和场景主光照到桌面落点时同方向、同距离（主角坐标系，-Y 是正面）
+    o.location = center + Vector((-0.65, -0.14, 0.35))
+    o.rotation_euler = (center - o.location).to_track_quat("-Z", "Y").to_euler()
+    con = o.constraints.new("CHILD_OF")
+    con.target = root
+    con.use_scale_x = con.use_scale_y = con.use_scale_z = False  # 落地挤压不带动灯
+    o.light_linking.receiver_collection = coll("HeroOnly", "INCLUDE")
+    return o
+
+
 def build_scene():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.context.preferences.edit.keyframe_new_interpolation_type = "LINEAR"
@@ -427,13 +455,15 @@ def build_scene():
         ro.location, ro.rotation_euler = (x, PHONE_C.y, 0.0082), (0, 0, math.pi / 2)
         rows_x.append(x)
 
+    lights = {}
     for name, loc, tgt, size, e, col in (
             ("KeyAmber", (-0.65, -0.30, 0.42), (0.08, 0.0, 0.05), 0.45, KEY_E, (1.0, 0.80, 0.58)),
             ("Rim", (0.45, 0.65, 0.30), (0.08, 0.0, 0.05), 0.35, 16.0, (0.85, 0.9, 1.0)),
             ("Fill", (0.15, -0.9, 0.25), (0.08, 0.0, 0.05), 0.8, 4.0, (1.0, 0.95, 0.9))):
-        area_light(name, loc, tgt, size, e, col)
+        lights[name] = area_light(name, loc, tgt, size, e, col)
 
     root, roll, disc, cord = build_disc()
+    hero_light(lights["KeyAmber"], root, (disc, cord))
 
     # 标题：屏盖局部坐标，屏幕正中
     font = None
@@ -480,7 +510,7 @@ def animate(S):
     rows_x = S["rows_x"]
     Lnd = Vector((0, -0.165, 0))
     H1 = Vector((0.19, -0.13, 0))
-    PH = lambda x: Vector((x, PHONE_C.y, PHONE_TOP))
+    PH = lambda x: Vector((x, ROLL_Y, PHONE_TOP))
     D2 = Vector((0.19, -0.17, 0))
     OUT = T / 2 + 0.0015
     S1 = scr(0.06, SCREEN_Z + 0.045, OUT)
@@ -581,11 +611,6 @@ def animate(S):
             sock.default_value = v
             sock.keyframe_insert("default_value", frame=f)
 
-    # 不同位置受光差很多：按段微调毛毡反照率，让受光面始终接近 #D0744E（按取色结果标定）
-    for m in ("FeltDisc", "FeltCord"):
-        keys(bpy.data.materials[m].node_tree.nodes["BaseScale"].outputs[0],
-             [(120, BASE_SCALE), (135, 1.25 * BASE_SCALE), (238, 1.25 * BASE_SCALE), (257, BASE_SCALE),
-              (266, 0.65 * BASE_SCALE), (345, 0.7 * BASE_SCALE), (362, 0.58 * BASE_SCALE)])
     keys(sn["CrackR"].outputs[0], [(59, 0.0), (60, 0.06), (63, 0.24), (70, 0.30)])
     keys(sn["CrackAmt"].outputs[0], [(59, 0.0), (60, 1.0), (200, 0.9), (245, 0.0)])
     keys(sn["DocMix"].outputs[0], [(255, 0.0), (275, 1.0)])
@@ -601,21 +626,22 @@ def animate(S):
 
     # 相机：关键位置 + Catmull-Rom 平滑
     xm = (rows_x[0] + rows_x[-1]) / 2
+    ym = (ROLL_Y + PHONE_C.y) / 2          # 看向圆片和亮行之间
     cam_keys = [
         (0, (0.0, -0.60, 0.075), C),
         (60, (0.0, -0.37, 0.085), C),
-        (78, (0.0, -0.47, 0.070), Vector((0, -0.03, 0.068))),
-        (120, (0.05, -0.50, 0.075), Vector((0.06, -0.07, 0.05))),
+        (78, (0.0, -0.50, 0.070), Vector((0, -0.03, 0.05))),
+        (120, (0.03, -0.50, 0.075), Vector((0.03, -0.07, 0.05))),
         (128, (0.15, -0.46, 0.085), Vector((0.17, -0.09, 0.06))),
-        (135, (0.20, -0.42, 0.090), Vector((rows_x[0], -0.035, 0.035))),
-        (180, (xm - 0.03, -0.36, 0.100), Vector((xm, -0.035, 0.03))),
-        (225, (rows_x[-1] - 0.02, -0.32, 0.12), Vector((rows_x[-1], -0.035, 0.025))),
-        (240, (xm - 0.03, -0.25, 0.17), Vector((xm - 0.005, -0.035, 0.01))),
-        (256, (0.22, -0.52, 0.11), Vector((0.15, -0.04, 0.07))),
+        (135, (0.20, -0.42, 0.105), Vector((rows_x[0], ym, 0.035))),
+        (180, (xm - 0.03, -0.36, 0.120), Vector((xm, ym, 0.03))),
+        (225, (rows_x[-1] - 0.02, -0.32, 0.14), Vector((rows_x[-1], ym, 0.025))),
+        (240, (xm - 0.01, -0.36, 0.15), Vector((rows_x[-1] + 0.005, ym, 0.045))),
+        (256, (0.22, -0.58, 0.11), Vector((0.15, -0.04, 0.06))),
         (264, (0.12, -0.56, 0.13), Vector((0.09, 0.04, 0.13))),
         (272, (0.08, -0.50, 0.12), Vector((0.07, 0.11, 0.13))),
         (345, (0.09, -0.45, 0.10), Vector((0.09, 0.11, 0.10))),
-        (362, (0.055, -0.48, 0.095), Vector((0.055, 0.11, 0.09))),
+        (362, (0.06, -0.60, 0.100), Vector((0.06, 0.11, 0.09))),
         (449, (0.065, -0.68, 0.110), Vector((0.065, 0.10, 0.095))),
     ]
     cam_keys = [(f, Vector(p), Vector(t)) for f, p, t in cam_keys]
@@ -779,6 +805,8 @@ def main():
     elif mode == "full":
         setup_render(sc, 160, 100)
         sc.render.filepath = os.path.join(HERE, "frames", "f_")
+        # 断点续渲：已有的帧跳过；正在渲的帧先写占位文件，重跑时不会两个进程抢同一帧
+        sc.render.use_overwrite, sc.render.use_placeholder = False, True
         bpy.ops.render.render(animation=True)
     bpy.ops.wm.save_as_mainfile(filepath=os.path.join(HERE, "开头动效.blend"))
 

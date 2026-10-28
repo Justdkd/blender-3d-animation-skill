@@ -51,7 +51,9 @@ python3 scripts/prep_screens.py 素材/main.png textures/main.png --top 168 \
 - **每帧烘焙**：用 `state(f)` 函数算每一帧的位置、四元数、滚动角、缩放，逐帧打关键帧（线性插值）。跳跃用抛物线，滚动角 = 距离 / 半径，所以不会打滑。四元数要和上一帧同号，否则会突然翻转。
 - **英雄时刻对正**：落地、定格这些时刻，让滚动角落在 2π 的整数倍（或加一点歪头角度），图案正对镜头。
 - **相机**：位置和看向点各一组关键点，用 Catmull-Rom 平滑插值；景深对焦物体设成 `Roll`。
-- **材质参数做成 Value 节点**（`Flat`、`DocMix`、`Scroll`、`CrackR`、`Glow`、`TitleA`、`BaseScale`），这样能直接打关键帧。
+- **主角单独一盏主光（Light Linking）**：场景主光排除主角，另一盏同色主光挂在 Root 上只照主角，主角走到哪里受光都一样，不要按段调反照率去补。做法见 `hero_light()` 和 pitfalls。
+- **主角别挡住要看的东西**：立着的主角会挡住身后的内容。逐行点亮这类镜头，让主角走在远离镜头的一侧（例子里的 `ROLL_Y`）。
+- **材质参数做成 Value 节点**（`Flat`、`DocMix`、`Scroll`、`CrackR`、`Glow`、`TitleA`），这样能直接打关键帧。
 - **毛毡质感**：Principled + Sheen + 两层细 Noise 凹凸 + 低频色斑，不用粒子毛发（渲染慢、难控）。
 - **列表逐行点亮**：每行一个透明叠加面片，UV 指向同一张截图的那一行，叠加发光强度按拍点打关键帧。
 - **CJK 标题**：PingFang 在 `/System/Library/AssetsV2/com_apple_MobileAsset_Font*/*/AssetData/PingFang.ttc`，找不到就退到 `/System/Library/Fonts/Hiragino Sans GB.ttc`。标题按目标宽度自动算字号，放在屏幕局部坐标里，保证完整落在屏幕内。
@@ -74,23 +76,33 @@ python3 scripts/prep_screens.py 素材/main.png textures/main.png --top 168 \
 scripts/sheet.sh 'check/stills/s*.png' 3 check/stills_sheet.png
 ```
 
-## 6. 逐张审片，列问题（按帧号）
+## 6. 逐帧越界检查 + 逐张审片，列问题（按帧号）
 
-逐张看 stills_sheet，对每一项给出“通过/不通过 + 帧号”：
+先跑越界检查。静帧只抽了 18 帧，出画、出 9:16 区这类问题人眼会漏；这个脚本把物体逐帧投影到画面，全片几秒钟跑完：
+
+```bash
+/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup 镜头.blend \
+  -P scripts/bounds_check.py -- --check 主角网格,主角绳子 --check 标题@370 \
+  --inside 标题:屏幕 --safe 420,1500 --out check/bounds.json
+```
+
+输出“出画 / 出 9:16 区 / 超出 屏幕”的帧号区间，`bounds.json` 里有每帧的像素包围框，照着改相机关键点。改完重跑，直到 `BOUNDS OK`（不用渲染，`-- build` 存好 .blend 就能查）。
+
+再逐张看 stills_sheet，对每一项给出“通过/不通过 + 帧号”：
 
 1. **主角颜色**：`python3 scripts/sample_color.py --points check/sample_points.json --dir check/stills --target D0744E`。自动取色点可能落在绳子、高光或阴影里，异常值要放大看一眼，必要时用 `--at png x y` 在干净的受光面重取。报告时写清哪些是取色点落错位置。
 2. **图案朝向**：英雄时刻（落地、定格）图案正对镜头。
 3. **屏幕清晰可读**：对焦、景深、反光不能吃掉内容。
 4. **按节拍发生的事件**（逐行点亮等）按顺序、在拍点上。
 5. **标题**完整在屏幕内，字体对。
-6. **构图**：主角没有被裁出画面；动作在 9:16 中间区域内（1920 宽时 x 在 420–1500）。
+6. **构图**：以 `bounds_check.py` 的结果为准；静帧上再看主角有没有挡住这一刻要看的内容。
 7. **没有多余物体、Logo、文字**。
 
 问题按帧号列给用户，修完先用 `-- probe 帧号,帧号` 只重渲受影响的帧确认，再进下一步。不要跳过这一步直接渲全片：全片一次一小时左右，返工代价大。
 
 ## 7. 全片渲染
 
-用 `scripts/render_full.sh`，配合 Bash 的 `run_in_background`：它会顺手开 `caffeinate`，渲完自动合成 H.264（yuv420p、crf 16、faststart）。脚本路径要写绝对路径。
+用 `scripts/render_full.sh`，配合 Bash 的 `run_in_background`：它会顺手开 `caffeinate`，渲完自动合成 H.264（yuv420p、crf 16、faststart）。脚本路径要写绝对路径。场景脚本的 full 模式要设 `use_overwrite=False` + `use_placeholder=True`（例子已设）：中途睡眠、崩溃或被打断，原样再跑同一条命令就从断点续渲，已渲好的帧跳过。
 
 ```bash
 scripts/render_full.sh /绝对路径/脚本.py /绝对路径/输出目录 成片.mp4
@@ -103,7 +115,8 @@ scripts/render_full.sh /绝对路径/脚本.py /绝对路径/输出目录 成片
 ## 8. 汇报
 
 - 取色结果（每帧 HEX 对目标，标明哪些是取色点落错）。
-- 每一项不通过的检查：帧号、原因、改了什么。补偿性做法（如按段调反照率）要直说是补偿。
+- 越界检查结果（`BOUNDS OK` 或剩下的帧号）。
+- 每一项不通过的检查：帧号、原因、改了什么。补偿性做法要直说是补偿。
 - 与需求不一致的地方：占位素材、素材分辨率不足、为了运动合理而改的造型。
 - 打了码的内容和保留未打码的内容。
 - 输出路径：脚本、`.blend`、PNG 序列、MP4、check 目录。
