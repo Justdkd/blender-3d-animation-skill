@@ -6,7 +6,7 @@
 
 给 Claude Code（以及 Cursor 等能读 SKILL.md 的 agent）用的技能：在本机用 Blender Python 脚本做短 3D 动画镜头，按固定的检查流程交付。
 
-流程：认素材 → 隐私打码 → 贴图检查 → 接触表 → 18 张静帧审片取色 → 按帧号修 → 全片渲染 + MP4。
+流程：认素材 → 隐私打码 → 贴图检查 → 接触表 → 逐帧越界检查 + 18 张静帧审片取色 → 按帧号修 → 全片渲染（可续渲）+ MP4。
 
 ## 目录
 
@@ -17,7 +17,8 @@ skills/blender-3d-animation/
 │   ├── prep_screens.py         截图打码 + 裁切 → 屏幕贴图
 │   ├── sample_color.py         渲染帧取色，对比目标 HEX
 │   ├── sheet.sh                PNG / 视频抽帧拼审片总览图
-│   └── render_full.sh          后台全片渲染 + 防睡眠 + 合成 H.264
+│   ├── bounds_check.py         逐帧投影：出画、出 9:16 区、标题出屏幕
+│   └── render_full.sh          后台全片渲染 + 防睡眠 + 断点续渲 + 合成 H.264
 ├── references/
 │   ├── pitfalls.md             踩过的坑（Blender 5 API、色彩、光照、取色、耗时）
 │   └── brief-template.md       需求模板
