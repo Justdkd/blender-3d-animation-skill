@@ -10,3 +10,5 @@ textures/
 *.png
 *.jpg
 *.blend
+# README 展示用的成片例外
+!docs/*.mp4

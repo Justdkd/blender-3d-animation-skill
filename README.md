@@ -1,3 +1,7 @@
+<a href="docs/claude-duet-opening.mp4"><img src="docs/demo.gif" alt="第一片成片：毛毡圆片破屏而出，跳上手机，再回到电脑出标题" width="720"></a>
+
+第一片成片（15 秒，点图看 1080p MP4）：用本技能和 [examples/claude-duet-opening](skills/blender-3d-animation/examples/claude-duet-opening/) 的脚本渲出，Claude Code 全程写脚本、审片、渲染。
+
 # blender-3d-animation-skill
 
 给 Claude Code（以及 Cursor 等能读 SKILL.md 的 agent）用的技能：在本机用 Blender Python 脚本做短 3D 动画镜头，按固定的检查流程交付。
