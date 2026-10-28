@@ -45,7 +45,7 @@ python3 scripts/prep_screens.py 素材/main.png textures/main.png --top 168 \
 
 从 `examples/claude-duet-opening/duet_opening.py` 复制一份到本期输出目录，在它的结构上改，不要从零写。它已经解决了 Blender 5 的 API 坑和下面这些做法：
 
-- **模式切换**：`-- build | textures | check | probe 90,185 | full`，同一个脚本覆盖所有检查和正式渲染。
+- **模式切换**：`-- build | textures | check | probe 90,185 | animatic | full`，同一个脚本覆盖所有检查和正式渲染。
 - **屏幕 = 自发光贴图 + 色彩管理用 Standard**：emission 强度 1、view transform `Standard` 时，屏幕像素和截图一致；AgX/Filmic 会把截图洗灰。
 - **角色层级**：`Root`（落点、朝向、挤压缩放）→ `Roll`（绕自身轴滚动）→ 网格。Root 原点放在接触点，挤压和摇晃都以地面为支点。
 - **每帧烘焙**：用 `state(f)` 函数算每一帧的位置、四元数、滚动角、缩放，逐帧打关键帧（线性插值）。跳跃用抛物线，滚动角 = 距离 / 半径，所以不会打滑。四元数要和上一帧同号，否则会突然翻转。
@@ -74,7 +74,11 @@ python3 scripts/prep_screens.py 素材/main.png textures/main.png --top 168 \
 
 ```bash
 scripts/sheet.sh 'check/stills/s*.png' 3 check/stills_sheet.png
+scripts/sheet.sh --phone 'check/stills/s*.png' check/phone_sheet.png
+scripts/sheet.sh --strip 脚本.py 120 check/strip_f0120.png
 ```
+
+`--phone` 每格缩到 360 px 宽，3 列。`--strip` 先用该脚本的 `-- probe` 渲出起始帧开始的连续 12 帧，再拼 6×2。跳跃、破屏这类最快的动作，各出一条 12 连帧。
 
 ## 6. 逐帧越界检查 + 逐张审片，列问题（按帧号）
 
@@ -99,6 +103,18 @@ scripts/sheet.sh 'check/stills/s*.png' 3 check/stills_sheet.png
 7. **没有多余物体、Logo、文字**。
 
 问题按帧号列给用户，修完先用 `-- probe 帧号,帧号` 只重渲受影响的帧确认，再进下一步。不要跳过这一步直接渲全片：全片一次一小时左右，返工代价大。
+
+7 项检查之后，再按 1–10 打分：开头 2 秒抓不抓人、手机上看清不清楚（见 §6 手机测试）、运动质感、画面变化（每 2–4 秒有新东西）、节拍对位、品牌 / 主角准确。只看渲出来的帧，不按“本来想做的”打分。列出最差 3 处：帧号、证据（哪张图）、局部修法。只修这 3 处，用 `-- probe` 重渲，再打一轮分。每项 ≥ 8 才进第 7 步全片渲染。分数和问题写进 `check/review.md`。
+
+## 低清预览
+
+`-- animatic` 用 Workbench 或 EEVEE 渲染引擎、50% 分辨率、无运动模糊，渲全片后合成 MP4（带占位节拍音更好），给 dkd 看节奏，确认后再渲全片。耗时【待实测】。
+
+```bash
+/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup -P 脚本.py -- animatic
+```
+
+成片在脚本旁边的 `check/animatic.mp4`。
 
 ## 7. 全片渲染
 

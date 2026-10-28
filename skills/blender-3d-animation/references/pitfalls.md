@@ -43,3 +43,4 @@
 - **耗时**：M5 Pro、1080p、160 spp + OIDN、运动模糊 0.5：约 10 秒/帧；50%、48–64 spp 的检查帧约 3–5 秒/帧。
 - **睡眠会暂停渲染**：`caffeinate -i -s -w <blender pid>`，合盖仍会睡。
 - **断点续渲**：full 模式设 `render.use_overwrite=False` + `use_placeholder=True`。中断后会留下 0 字节占位帧，不删就会被当成已渲好跳过；`render_full.sh` 启动前会删掉小于 2 KB 的帧，渲完再查一遍。
+- **低清预览耗时**：`-- animatic` 用 Workbench 或 EEVEE、50% 分辨率、无运动模糊，渲全片后合成 MP4。耗时【待实测】。

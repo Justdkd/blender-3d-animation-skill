@@ -3,8 +3,9 @@
 #   build     只建场景并保存 .blend
 #   textures  三张屏幕贴图在物体上的正面检查图
 #   check     接触表（0/60/90/150/270/400）+ 18 张半分辨率静帧 + 取色点
+#   animatic  低清预览：Workbench 或 EEVEE、50% 分辨率、无运动模糊，渲全片后合成 MP4
 #   full      全部 450 帧 PNG（MP4 用 ffmpeg 另合）
-import bpy, math, random, sys, os, json, glob
+import bpy, math, random, sys, os, json, glob, subprocess
 from mathutils import Vector, Quaternion, Matrix
 from bpy_extras.object_utils import world_to_camera_view
 
@@ -711,6 +712,26 @@ def build_shards(S, Ml, n):
 
 
 # ---------------------------------------------------------------- 渲染
+def setup_animatic(sc):
+    # Workbench 或 EEVEE。先试 EEVEE（屏幕自发光看得到），设不上再用 Workbench。
+    # Blender 5 的标识是 BLENDER_EEVEE；4.2–4.5 是 BLENDER_EEVEE_NEXT。
+    for engine in ("BLENDER_EEVEE", "BLENDER_EEVEE_NEXT", "BLENDER_WORKBENCH"):
+        try:
+            sc.render.engine = engine
+            break
+        except TypeError:
+            continue
+    sc.render.resolution_x, sc.render.resolution_y, sc.render.resolution_percentage = 1920, 1080, 50
+    sc.render.fps = FPS
+    sc.frame_start, sc.frame_end = 0, FRAMES - 1
+    sc.render.use_motion_blur = False
+    sc.view_settings.view_transform = "Standard"
+    sc.view_settings.look = "None"
+    sc.render.image_settings.file_format = "PNG"
+    sc.render.image_settings.color_mode = "RGB"
+    print("ANIMATIC_ENGINE", sc.render.engine)
+
+
 def setup_render(sc, samples, pct):
     sc.render.engine = "CYCLES"
     prefs = bpy.context.preferences.addons["cycles"].preferences
@@ -801,6 +822,22 @@ def main():
             render_still(sc, f, os.path.join(CHECK, "probe", f"p_f{f:04d}.png"))
             pts.append(sample_point(S, f))
         json.dump(pts, open(os.path.join(CHECK, "probe_points.json"), "w"), indent=1)
+        return
+    elif mode == "animatic":
+        setup_animatic(sc)
+        seq = os.path.join(CHECK, "animatic")
+        os.makedirs(seq, exist_ok=True)
+        sc.render.filepath = os.path.join(seq, "f_")
+        bpy.ops.render.render(animation=True)
+        mp4 = os.path.join(CHECK, "animatic.mp4")
+        subprocess.check_call([
+            "ffmpeg", "-v", "error", "-y",
+            "-framerate", str(FPS), "-start_number", "0",
+            "-i", os.path.join(seq, "f_%04d.png"),
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "16",
+            "-preset", "fast", "-movflags", "+faststart", mp4,
+        ])
+        print("ANIMATIC", mp4)
         return
     elif mode == "full":
         setup_render(sc, 160, 100)
