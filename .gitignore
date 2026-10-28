@@ -1,0 +1,12 @@
+.DS_Store
+__pycache__/
+*.blend1
+# 渲染产物和素材不进仓库
+frames/
+check/
+textures/
+素材/
+*.mp4
+*.png
+*.jpg
+*.blend
